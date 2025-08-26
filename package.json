@@ -1,0 +1,19 @@
+{
+  "name": "css_hero",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "run": "node src/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@adobe/css-tools": "^4.4.4",
+    "fastify": "^5.5.0",
+    "htmlparser2": "^10.0.0",
+    "jsdom": "^26.1.0",
+    "node-html-parser": "^7.0.1"
+  }
+}
