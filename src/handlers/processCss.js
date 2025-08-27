@@ -54,8 +54,7 @@ async function makeIsUsedSelector(cssOm, html) {
 
 export async function processCss(request, _reply) {
     const result = parse(request.body.css, { silent: true });
-
-    const processDeclarationUrls = makeProcessDeclarationUrls('https://assets.boredpanda.com/blog/wp-content/themes/boredpanda/');
+    const processDeclarationUrls = makeProcessDeclarationUrls(request.body.baseUrl);
 
     const isUsedSelector = await makeIsUsedSelector(result, request.body.html);
 
