@@ -1,26 +1,10 @@
-import { writeFileSync } from 'fs';
+// import {writeFileSync } from "fs";
 import { parse, stringify } from '@adobe/css-tools';
 
-function makeProcessDeclarationUrls(baseUrl) {
-    return function processDeclarationUrls(rule) {
-        let { declarations } = rule;
-
-        if (!declarations) {
-            return rule;
-        }
-
-        declarations = declarations.map(function onDeclaration(declaration) {
-            let { value } = declaration;
-            value = value
-            .replaceAll(/url\((['"]?)(.*?)\1\)/ig, function(_match, _quote, url) {
-                return `url('${baseUrl}${url}')`;
-            });
-
-            return { ...declaration, value };
-        });
-
-        return {...rule, declarations};
-    }
+function processDeclarationUrls(css, baseUrl) {
+    return (css || '').replaceAll(/url\((['"]?)(.*?)\1\)/ig, function perUrlMatch(_match, _quote, url) {
+        return `url('${baseUrl}${url}')`;
+    });
 }
 
 async function makeIsUsedSelector(cssOm, html) {
@@ -28,16 +12,11 @@ async function makeIsUsedSelector(cssOm, html) {
         if (rule.type == "rule") {
             return rule.selectors;
         } else if (rule.type == "media") {
-            return rule.rules.map(rule => rule.selector);
+            return rule.rules.flatMap(rule => rule.selectors);
         } else {
             return [];
         }
-    }))).map(function perSelector(selector) {
-        return (selector || "")
-            .replaceAll(/(:[^\s$]+)/gi, '');
-    }).filter(selector => !!selector)
-
-    // writeFileSync('outtt.json', JSON.stringify(selectorList));
+    })))
 
     const result = await fetch(process.env.QUERY_SERVICE, {
         method: 'POST',
@@ -47,18 +26,26 @@ async function makeIsUsedSelector(cssOm, html) {
     const resSelectors = await result.json();
     const { res } = resSelectors;
 
-    return function isUsedSelector(selector) {
-        return res[selector] || false;
+    // writeFileSync('out.json', JSON.stringify(res), {encoding: 'utf8'});
+
+    return function isUsedSelector(rule) {
+        return rule.selectors.some(selector => {
+            return res[selector] || false
+        });
     }
 }
 
 export async function processCss(request, _reply) {
-    const result = parse(request.body.css, { silent: true });
-    const processDeclarationUrls = makeProcessDeclarationUrls(request.body.baseUrl);
+    const combinedCss = 
+        request.body.css.reduce(function perCssFile(acc, [cssText, href]) {
+            return `${acc}\n` + processDeclarationUrls(cssText, href);
+        }, "");
 
-    const isUsedSelector = await makeIsUsedSelector(result, request.body.html);
+    const parsedCss = parse(combinedCss, { silent: true });
 
-    const newRules = result.stylesheet.rules.filter(function perRule(rule) {
+    const isUsedSelector = await makeIsUsedSelector(parsedCss, request.body.html);
+
+    const newRules = parsedCss.stylesheet.rules.filter(function perRule(rule) {
         if (rule.type == "rule") {
             return isUsedSelector(rule);
         } else if (rule.type == "media") {
@@ -66,28 +53,23 @@ export async function processCss(request, _reply) {
         } else {
             return true;
         }
-    }).map(function mapRules(rule) {
-        if (rule.type == "rule") {
-            return processDeclarationUrls(rule);
-        } else if (rule.type == "media") {
-            if (!rule.rules) {
-                return rule;
-            }
+    });
 
-            return {
-                ...rule,
-                rules: rule.rules.map(processDeclarationUrls),
-            }
-        } else if (rule.type == "font-face") {
-            return processDeclarationUrls(rule);
+    const nonCriticalRules = parsedCss.stylesheet.rules.filter(function perRule(rule) {
+        if (rule.type == "rule") {
+            return !isUsedSelector(rule);
+        } else if (rule.type == "media") {
+            return !rule.rules.some(isUsedSelector);
         } else {
-            return rule;
+            return false;
         }
     });
 
+    parsedCss.stylesheet.rules = newRules;
+    const css = stringify(parsedCss, { compress: true });
 
-    result.stylesheet.rules = newRules;
+    parsedCss.stylesheet.rules = nonCriticalRules;
+    const nonCriticalCss = stringify(parsedCss, { compress: true });
 
-    const css = stringify(result, { compress: true });
-    return { css };
+    return { css, nonCriticalCss };
 }
